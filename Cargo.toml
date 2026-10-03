@@ -1,6 +1,6 @@
 [package]
 name = "sootmark-utmp"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 rust-version = "1.80"
 description = "Linux login records (utmp, wtmp, btmp): glibc's struct utmp in its 384- and 400-byte layouts, either byte order."

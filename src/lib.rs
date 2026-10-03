@@ -18,6 +18,9 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 use common::time::Ts;
 
+/// This crate's version, for records of what parsed them.
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
 /// `ut_line`, `ut_user`: 32 bytes; `ut_host`: 256; `ut_id`: 4.
 const LINE: usize = 32;
 const USER: usize = 32;
