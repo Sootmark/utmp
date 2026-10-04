@@ -18,14 +18,22 @@
 //! [`parse_lastlog`] reads `lastlog` (each account's last login, by UID),
 //! whose records come in the same layouts: 292 bytes where `struct utmp` is
 //! 384, 296 where it is 400.
+//!
+//! [`parse_wtmpdb`] and [`parse_lastlog2`] read the SQLite databases newer
+//! distributions keep instead (`/var/lib/wtmpdb/wtmp.db`,
+//! `/var/lib/lastlog/lastlog2.db`), with their write-ahead logs.
 
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 use common::time::Ts;
 
 mod lastlog;
+mod sqlite_logins;
 
 pub use lastlog::{parse_lastlog, LastLogin, Lastlog};
+pub use sqlite_logins::{
+    parse_lastlog2, parse_wtmpdb, LastLogin2, Lastlog2, Session, SessionKind, Sessions,
+};
 
 /// This crate's version, for records of what parsed them.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

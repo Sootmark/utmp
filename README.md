@@ -1,10 +1,10 @@
 # utmp
 
-Linux login records: `utmp` (who is logged in), `wtmp` (every login, logout and boot) and `btmp` (failed logins), glibc's `struct utmp`; and `lastlog` (each account's last login), glibc's `struct lastlog`. One dependency, its sibling `sootmark-common` (times).
+Linux login records: `utmp` (who is logged in), `wtmp` (every login, logout and boot) and `btmp` (failed logins), glibc's `struct utmp`; and `lastlog` (each account's last login), glibc's `struct lastlog`; and the SQLite databases newer distributions write instead, wtmpdb's `wtmp.db` and util-linux's `lastlog2.db`. Two dependencies, its siblings `sootmark-common` (times) and `sootmark-sqlite` (read without SQLite).
 
 ```toml
 [dependencies]
-sootmark-utmp = "0.2"
+sootmark-utmp = "0.3"
 ```
 
 ```rust
@@ -26,13 +26,15 @@ for login in &lastlog.entries {
 - Damage is reported, never a panic: a record of an unknown type is listed in `problems` and skipped, the records after it still read; bytes after the last whole record are reported.
 - `parse_lastlog(bytes)`: the last login of every account that has logged in (UID, time to the second, terminal, remote host), from the sparse file indexed by UID; accounts that never logged in (all-zero records) are skipped without allocating for them. The record follows `struct utmp`'s layouts: 292 bytes (a 32-bit time, unsigned in current glibc) where `utmp` is 384, 296 bytes (a 64-bit time, either byte order) where it is 400, told the same way (plausible times, text fields that end). A login at an implausible time is kept and reported in `problems`, as is a truncated end.
 
-Not yet: `wtmpdb` (the SQLite database newer distributions write instead of `wtmp`).
+- `parse_wtmpdb(database, wal)`: wtmpdb's sessions (Debian 13, openSUSE: `/var/lib/wtmpdb/wtmp.db`): boots and logins with user, login and logout times (microseconds; no logout while open), terminal, remote host and PAM service. The `-wal` file's committed changes are applied: recent sessions may be only there.
+- `parse_lastlog2(database, wal)`: util-linux's `lastlog2.db` (`/var/lib/lastlog/lastlog2.db`): each account's last login by name, with terminal, remote host and PAM service.
 
 ## How it's checked
 
 - plaso's utmp test files (Apache-2.0, `tests/fixtures/plaso/`): the 26 records of the x86-64 ones match util-linux's `utmpdump` on every field (its output in `tests/oracle/`), including a file with two damaged records and a truncated end; the aarch64 and s390x files (400-byte records, little- and big-endian) as plaso's own tests expect them.
 - `lastlog`: no openly licensed sample exists (plaso has none), so the files are built in the tests, record by record, in each of the three layouts, per glibc's `bits/utmp.h`.
-- Property tests: arbitrary bytes and real files damaged and cut anywhere read or are refused, never a panic; the same for `lastlog`.
+- wtmpdb and lastlog2: databases made by `tests/fixtures/sqlite/gen.sh` (the sqlite3 shell, with the tables wtmpdb 0.73 and util-linux 2.41 create, synthetic rows), compared with wtmpdb's own `last`; one keeps a session only in its write-ahead log.
+- Property tests: arbitrary bytes and real files damaged and cut anywhere read or are refused, never a panic; the same for `lastlog`, wtmpdb and lastlog2.
 
 ## Licence
 

@@ -1,0 +1,6 @@
+deploy   pts/1        2001:db8::7      Tue Sep  1 08:23:20 2026 - Tue Sep  1 08:24:20 2026  (00:01)
+root     tty1                          Tue Sep  1 08:06:40 2026 - still logged in          
+alice    pts/0        192.0.2.15       Tue Sep  1 08:01:40 2026 - Tue Sep  1 09:01:40 2026  (00:59)
+reboot   system boot  6.12.48+deb13-am Tue Sep  1 08:00:00 2026 - still running            
+
+wtmp.db begins Tue Sep  1 08:00:00 2026
