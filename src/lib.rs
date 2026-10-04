@@ -3,20 +3,29 @@
 //!
 //! The record has two sizes, and two byte orders:
 //!
-//! - 384 bytes where 64-bit glibc keeps 32-bit times for compatibility
-//!   (x86-64, and 32-bit systems): `ut_session` and `ut_tv` are 32-bit;
-//! - 400 bytes elsewhere (aarch64, s390x, ppc64, …): both are 64-bit;
-//! - little- or big-endian (s390x is big-endian).
+//! - 384 bytes where glibc keeps 32-bit times (`__WORDSIZE_TIME64_COMPAT32`:
+//!   x86-64, ppc64, riscv64, mips, sparc64, and 32-bit systems):
+//!   `ut_session` and `ut_tv` are 32-bit;
+//! - 400 bytes elsewhere (aarch64, loongarch64, s390x): both are 64-bit;
+//! - little- or big-endian (s390x, sparc64, ppc64 but not ppc64le).
 //!
 //! [`parse`] tells which from the records themselves: the layout under
 //! which they read as login records (known types, times in a plausible
 //! range, text fields that end) is the one used. A record that doesn't
 //! read (an unknown type, damage) is reported in `problems` and skipped;
 //! a truncated record at the end is reported too.
+//!
+//! [`parse_lastlog`] reads `lastlog` (each account's last login, by UID),
+//! whose records come in the same layouts: 292 bytes where `struct utmp` is
+//! 384, 296 where it is 400.
 
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 use common::time::Ts;
+
+mod lastlog;
+
+pub use lastlog::{parse_lastlog, LastLogin, Lastlog};
 
 /// This crate's version, for records of what parsed them.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -31,32 +40,49 @@ const PLAUSIBLE: std::ops::Range<i64> = 631_152_000..4_102_444_800;
 /// How the records are laid out.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Layout {
-    /// 384-byte records, 32-bit times (x86-64, 32-bit systems).
+    /// 384-byte records (292 in `lastlog`), 32-bit times, little-endian
+    /// (x86-64, ppc64le, riscv64, 32-bit systems).
     Time32,
-    /// 400-byte records, 64-bit times, little-endian (aarch64, ppc64le, …).
+    /// 400-byte records (296 in `lastlog`), 64-bit times, little-endian
+    /// (aarch64, loongarch64).
     Time64,
-    /// 400-byte records, 64-bit times, big-endian (s390x, ppc64).
+    /// 400-byte records (296 in `lastlog`), 64-bit times, big-endian
+    /// (s390x).
     Time64BigEndian,
+    /// 384-byte records (292 in `lastlog`), 32-bit times, big-endian
+    /// (ppc64, sparc64, big-endian mips and 32-bit systems).
+    Time32BigEndian,
 }
 
 impl Layout {
-    /// Bytes per record.
+    /// Every layout, the most common first: when two read equally well,
+    /// the earlier is taken.
+    pub const ALL: [Self; 4] = [
+        Self::Time32,
+        Self::Time64,
+        Self::Time64BigEndian,
+        Self::Time32BigEndian,
+    ];
+}
+
+impl Layout {
+    /// Bytes per `utmp` record.
     #[must_use]
     pub const fn record_size(self) -> usize {
         match self {
-            Self::Time32 => 384,
+            Self::Time32 | Self::Time32BigEndian => 384,
             Self::Time64 | Self::Time64BigEndian => 400,
         }
     }
 
     const fn big_endian(self) -> bool {
-        matches!(self, Self::Time64BigEndian)
+        matches!(self, Self::Time64BigEndian | Self::Time32BigEndian)
     }
 
     /// Offsets of `ut_exit`, `ut_session`, `ut_tv` and `ut_addr_v6`.
     const fn offsets(self) -> (usize, usize, usize, usize) {
         match self {
-            Self::Time32 => (332, 336, 340, 348),
+            Self::Time32 | Self::Time32BigEndian => (332, 336, 340, 348),
             Self::Time64 | Self::Time64BigEndian => (332, 336, 344, 360),
         }
     }
@@ -201,8 +227,7 @@ pub fn parse(data: &[u8]) -> Result<Records, Error> {
     let size = layout.record_size();
     let mut records = Vec::new();
     let mut problems = Vec::new();
-    let mut chunks = data.chunks_exact(size);
-    for (index, bytes) in chunks.by_ref().enumerate() {
+    for (index, bytes) in data.chunks_exact(size).enumerate() {
         let offset = (index * size) as u64;
         match record(bytes, layout, offset) {
             Some(record) => records.push(record),
@@ -212,13 +237,7 @@ pub fn parse(data: &[u8]) -> Result<Records, Error> {
             )),
         }
     }
-    let rest = chunks.remainder().len();
-    if rest > 0 {
-        problems.push(format!(
-            "{rest} bytes after the last whole record (at 0x{:08x})",
-            data.len() - rest
-        ));
-    }
+    problems.extend(remainder(data, size));
     Ok(Records {
         layout,
         records,
@@ -228,16 +247,15 @@ pub fn parse(data: &[u8]) -> Result<Records, Error> {
 
 /// The layout under which the file reads best as login records.
 fn detect(data: &[u8]) -> Option<Layout> {
-    [Layout::Time32, Layout::Time64, Layout::Time64BigEndian]
+    Layout::ALL
         .into_iter()
         .filter(|layout| data.len() >= layout.record_size())
         .map(|layout| (score(data, layout), layout))
         .filter(|&(score, _)| score > 0)
-        // Ties go to the earlier (more common) layout.
-        .max_by(|a, b| {
-            a.0.cmp(&b.0)
-                .then(b.1.record_size().cmp(&a.1.record_size()))
-        })
+        // `max_by_key` keeps the last of equals: reversed, ties go to the
+        // earlier (more common) layout.
+        .rev()
+        .max_by_key(|&(score, _)| score)
         .map(|(_, layout)| layout)
 }
 
@@ -271,7 +289,7 @@ fn record(bytes: &[u8], layout: Layout, offset: u64) -> Option<Record> {
     let kind = Kind::from_raw(i16_at(bytes, 0, big))?;
     let (exit, session, tv, addr) = layout.offsets();
     let (session, seconds, microseconds) = match layout {
-        Layout::Time32 => (
+        Layout::Time32 | Layout::Time32BigEndian => (
             i64::from(i32_at(bytes, session, big)),
             i64::from(i32_at(bytes, tv, big)),
             i64::from(i32_at(bytes, tv + 4, big)),
@@ -298,6 +316,17 @@ fn record(bytes: &[u8], layout: Layout, offset: u64) -> Option<Record> {
         seconds,
         microseconds,
         address: address(&bytes[addr..addr + 16]),
+    })
+}
+
+/// Bytes after the last whole record of `size`, as a problem.
+fn remainder(data: &[u8], size: usize) -> Option<String> {
+    let rest = data.len() % size;
+    (rest > 0).then(|| {
+        format!(
+            "{rest} bytes after the last whole record (at 0x{:08x})",
+            data.len() - rest
+        )
     })
 }
 

@@ -181,3 +181,31 @@ mod damage {
         }
     }
 }
+
+/// plaso's x86-64 records with their numbers in big-endian order, as
+/// ppc64 or sparc64 would write them: the same records.
+#[test]
+fn big_endian_32_bit_times() {
+    let little = fixture("utmp_x86_64");
+    let mut big = little.clone();
+    for record in big.chunks_exact_mut(384) {
+        // ut_type (and its padding) and ut_pid; ut_exit's two shorts;
+        // ut_session and ut_tv's two words. ut_addr_v6 is in network
+        // order either way.
+        for (at, width) in [
+            (0, 2),
+            (4, 4),
+            (332, 2),
+            (334, 2),
+            (336, 4),
+            (340, 4),
+            (344, 4),
+        ] {
+            record[at..at + width].reverse();
+        }
+    }
+    let little = utmp::parse(&little).unwrap();
+    let big = utmp::parse(&big).unwrap();
+    assert_eq!(big.layout, utmp::Layout::Time32BigEndian);
+    assert_eq!(big.records, little.records);
+}
