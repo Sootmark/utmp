@@ -1,6 +1,6 @@
 [package]
 name = "sootmark-utmp"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2021"
 rust-version = "1.80"
 description = "Linux login records (utmp, wtmp, btmp, lastlog, wtmpdb, lastlog2): glibc's struct utmp and struct lastlog in their 32- and 64-bit-time layouts, either byte order, and the SQLite databases that replace them."

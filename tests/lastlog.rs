@@ -15,6 +15,7 @@ fn record(layout: Layout, seconds: i64, line: &str, host: &str) -> Vec<u8> {
         Layout::Time32BigEndian => (seconds as u32).to_be_bytes().to_vec(),
         Layout::Time64 => seconds.to_le_bytes().to_vec(),
         Layout::Time64BigEndian => seconds.to_be_bytes().to_vec(),
+        Layout::MacUtmpx => unreachable!("macOS keeps no lastlog"),
     };
     for (text, width) in [(line, 32), (host, 256)] {
         let mut field = text.as_bytes().to_vec();

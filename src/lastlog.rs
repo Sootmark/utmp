@@ -128,7 +128,10 @@ fn login(bytes: &[u8], layout: Layout) -> Login<'_> {
     let big = layout.big_endian();
     let (seconds, line) = match layout {
         // Unsigned: a 32-bit time that runs to 2106.
-        Layout::Time32 | Layout::Time32BigEndian => (i64::from(i32_at(bytes, 0, big) as u32), 4),
+        // macOS keeps no lastlog: its layout never reads one.
+        Layout::Time32 | Layout::Time32BigEndian | Layout::MacUtmpx => {
+            (i64::from(i32_at(bytes, 0, big) as u32), 4)
+        }
         Layout::Time64 | Layout::Time64BigEndian => (i64_at(bytes, 0, big), 8),
     };
     Login {
@@ -146,7 +149,7 @@ fn padded(field: &[u8]) -> bool {
 
 const fn record_size(layout: Layout) -> usize {
     match layout {
-        Layout::Time32 | Layout::Time32BigEndian => 292,
+        Layout::Time32 | Layout::Time32BigEndian | Layout::MacUtmpx => 292,
         Layout::Time64 | Layout::Time64BigEndian => 296,
     }
 }

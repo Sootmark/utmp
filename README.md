@@ -4,7 +4,7 @@ Linux login records: `utmp` (who is logged in), `wtmp` (every login, logout and 
 
 ```toml
 [dependencies]
-sootmark-utmp = "0.3"
+sootmark-utmp = "0.4"
 ```
 
 ```rust
@@ -28,6 +28,7 @@ for login in &lastlog.entries {
 
 - `parse_wtmpdb(database, wal)`: wtmpdb's sessions (Debian 13, openSUSE: `/var/lib/wtmpdb/wtmp.db`): boots and logins with user, login and logout times (microseconds; no logout while open), terminal, remote host and PAM service. The `-wal` file's committed changes are applied: recent sessions may be only there.
 - `parse_lastlog2(database, wal)`: util-linux's `lastlog2.db` (`/var/lib/lastlog/lastlog2.db`): each account's last login by name, with terminal, remote host and PAM service.
+- macOS's `utmpx` (`/var/run/utmpx`): its 628-byte records after the `utmpx-1.00` signature, the same `Record` (user, terminal, id, pid, kind, time, host); `Layout::MacUtmpx`.
 
 ## How it's checked
 
@@ -35,6 +36,7 @@ for login in &lastlog.entries {
 - `lastlog`: no openly licensed sample exists (plaso has none), so the files are built in the tests, record by record, in each of the three layouts, per glibc's `bits/utmp.h`.
 - wtmpdb and lastlog2: databases made by `tests/fixtures/sqlite/gen.sh` (the sqlite3 shell, with the tables wtmpdb 0.73 and util-linux 2.41 create, synthetic rows), compared with wtmpdb's own `last`; one keeps a session only in its write-ahead log.
 - Property tests: arbitrary bytes and real files damaged and cut anywhere read or are refused, never a panic; the same for `lastlog`, wtmpdb and lastlog2.
+- macOS `utmpx`: plaso's `utmpx_mac`, every record its `utmpx` parser reads, read the same (`tests/utmpx.rs`).
 
 ## Licence
 

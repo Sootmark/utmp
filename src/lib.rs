@@ -60,6 +60,9 @@ pub enum Layout {
     /// 384-byte records (292 in `lastlog`), 32-bit times, big-endian
     /// (ppc64, sparc64, big-endian mips and 32-bit systems).
     Time32BigEndian,
+    /// macOS's `utmpx` (`/var/run/utmpx`): 628-byte records, little-endian,
+    /// after a signature record (`utmpx-1.00`).
+    MacUtmpx,
 }
 
 impl Layout {
@@ -80,6 +83,7 @@ impl Layout {
         match self {
             Self::Time32 | Self::Time32BigEndian => 384,
             Self::Time64 | Self::Time64BigEndian => 400,
+            Self::MacUtmpx => MAC_RECORD,
         }
     }
 
@@ -90,7 +94,7 @@ impl Layout {
     /// Offsets of `ut_exit`, `ut_session`, `ut_tv` and `ut_addr_v6`.
     const fn offsets(self) -> (usize, usize, usize, usize) {
         match self {
-            Self::Time32 | Self::Time32BigEndian => (332, 336, 340, 348),
+            Self::Time32 | Self::Time32BigEndian | Self::MacUtmpx => (332, 336, 340, 348),
             Self::Time64 | Self::Time64BigEndian => (332, 336, 344, 360),
         }
     }
@@ -119,6 +123,10 @@ pub enum Kind {
     DeadProcess,
     /// Accounting (9, unused by glibc).
     Accounting,
+    /// macOS: the file's signature record (10).
+    Signature,
+    /// macOS: a shutdown (11).
+    ShutdownTime,
 }
 
 impl Kind {
@@ -134,6 +142,8 @@ impl Kind {
             7 => Self::UserProcess,
             8 => Self::DeadProcess,
             9 => Self::Accounting,
+            10 => Self::Signature,
+            11 => Self::ShutdownTime,
             _ => return None,
         })
     }
@@ -152,6 +162,8 @@ impl Kind {
             Self::UserProcess => "USER_PROCESS",
             Self::DeadProcess => "DEAD_PROCESS",
             Self::Accounting => "ACCOUNTING",
+            Self::Signature => "SIGNATURE",
+            Self::ShutdownTime => "SHUTDOWN_TIME",
         }
     }
 }
@@ -253,8 +265,15 @@ pub fn parse(data: &[u8]) -> Result<Records, Error> {
     })
 }
 
+/// macOS `utmpx`'s record size and first bytes.
+const MAC_RECORD: usize = 628;
+const MAC_SIGNATURE: &[u8] = b"utmpx-1.00";
+
 /// The layout under which the file reads best as login records.
 fn detect(data: &[u8]) -> Option<Layout> {
+    if data.starts_with(MAC_SIGNATURE) && data.len() >= MAC_RECORD {
+        return Some(Layout::MacUtmpx);
+    }
     Layout::ALL
         .into_iter()
         .filter(|layout| data.len() >= layout.record_size())
@@ -293,11 +312,14 @@ fn score(data: &[u8], layout: Layout) -> i64 {
 }
 
 fn record(bytes: &[u8], layout: Layout, offset: u64) -> Option<Record> {
+    if layout == Layout::MacUtmpx {
+        return mac_record(bytes, offset);
+    }
     let big = layout.big_endian();
     let kind = Kind::from_raw(i16_at(bytes, 0, big))?;
     let (exit, session, tv, addr) = layout.offsets();
     let (session, seconds, microseconds) = match layout {
-        Layout::Time32 | Layout::Time32BigEndian => (
+        Layout::Time32 | Layout::Time32BigEndian | Layout::MacUtmpx => (
             i64::from(i32_at(bytes, session, big)),
             i64::from(i32_at(bytes, tv, big)),
             i64::from(i32_at(bytes, tv + 4, big)),
@@ -324,6 +346,28 @@ fn record(bytes: &[u8], layout: Layout, offset: u64) -> Option<Record> {
         seconds,
         microseconds,
         address: address(&bytes[addr..addr + 16]),
+    })
+}
+
+/// macOS's `struct utmpx`: user (256), id (4), line (32), pid, type, then
+/// the time (seconds and microseconds, 32 bits each) and host (256).
+fn mac_record(bytes: &[u8], offset: u64) -> Option<Record> {
+    let id_bytes: [u8; 4] = bytes[256..260].try_into().ok()?;
+    Some(Record {
+        offset,
+        kind: Kind::from_raw(i16_at(bytes, 296, false))?,
+        pid: i32_at(bytes, 292, false),
+        line: text(&bytes[260..292]),
+        id: text(&id_bytes),
+        id_number: u32::from_le_bytes(id_bytes),
+        user: text(&bytes[..256]),
+        host: text(&bytes[308..564]),
+        exit_termination: 0,
+        exit_status: 0,
+        session: 0,
+        seconds: i64::from(i32_at(bytes, 300, false)),
+        microseconds: i64::from(i32_at(bytes, 304, false)),
+        address: None,
     })
 }
 

@@ -254,7 +254,7 @@ checksum = "6b6a2752904021ea4c826cbaf7c1c2a7f879c1824bc50a97bc9ce7682b567dee"
 
 [[package]]
 name = "sootmark-utmp"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "proptest",
  "sootmark-common",
