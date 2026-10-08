@@ -1,6 +1,6 @@
 [package]
 name = "sootmark-utmp"
-version = "0.4.0"
+version = "0.4.1"
 edition = "2021"
 rust-version = "1.80"
 description = "Linux login records (utmp, wtmp, btmp, lastlog, wtmpdb, lastlog2): glibc's struct utmp and struct lastlog in their 32- and 64-bit-time layouts, either byte order, and the SQLite databases that replace them."
@@ -16,7 +16,7 @@ name = "utmp"
 
 [dependencies]
 common = { package = "sootmark-common", version = "0.3.5" }
-sqlite = { package = "sootmark-sqlite", version = "0.1.0" }
+sqlite = { package = "sootmark-sqlite", version = "0.2.0" }
 
 [dev-dependencies]
 proptest = "1"

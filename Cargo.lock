@@ -248,13 +248,13 @@ checksum = "bafd4296b9b9d7da9946442ba093f0c53362ae32d0e8f9b6d8497902ca5c5307"
 
 [[package]]
 name = "sootmark-sqlite"
-version = "0.1.0"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6b6a2752904021ea4c826cbaf7c1c2a7f879c1824bc50a97bc9ce7682b567dee"
+checksum = "4734c8224fde044029a00acd3c79637162e9e4d258b3b683108993713d990dcb"
 
 [[package]]
 name = "sootmark-utmp"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "proptest",
  "sootmark-common",
